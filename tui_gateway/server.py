@@ -6255,11 +6255,23 @@ def _(rid, params: dict) -> dict:
     # breaks the loop and kills the in-flight foreground subprocess, but any
     # background processes this session spawned (servers, watchers, bg tasks)
     # are detached and would otherwise keep running after stop. Kill them too,
-    # scoped to this session's task_id so other sessions are untouched.
+    # matched by session_key (the bg task_id collapses to the shared "default"
+    # container, so a task_id filter would miss them) so other sessions are
+    # untouched.
     try:
         from tools.process_registry import process_registry
 
-        killed = process_registry.kill_all(task_id=session.get("session_key", ""))
+        key = str(session.get("session_key") or "")
+        killed = 0
+        for entry in process_registry.list_sessions():
+            proc = process_registry.get(entry["session_id"])
+            if proc is None or proc.exited or str(getattr(proc, "session_key", "") or "") != key:
+                continue
+            if process_registry.kill_process(entry["session_id"], source="session.interrupt").get("status") in {
+                "killed",
+                "already_exited",
+            }:
+                killed += 1
         if killed:
             logger.info("session.interrupt: killed %d background process(es)", killed)
     except Exception:

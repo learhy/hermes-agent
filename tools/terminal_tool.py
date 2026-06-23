@@ -2151,7 +2151,13 @@ def terminal_tool(
             from tools.approval import get_current_session_key
             from tools.process_registry import process_registry
 
-            session_key = get_current_session_key(default="")
+            # get_current_session_key() reads a contextvar that does NOT
+            # propagate to concurrent tool-worker threads, so a backgrounded
+            # command spawned off the main turn thread would record an empty
+            # session_key — and then `process.kill` / stop can't find it to kill
+            # it (rogue process). The raw `task_id` IS the session_key for the
+            # top-level agent, so fall back to it: a stable, thread-safe anchor.
+            session_key = get_current_session_key(default="") or (task_id or "")
             effective_cwd = _resolve_command_cwd(
                 workdir=workdir,
                 env=env,

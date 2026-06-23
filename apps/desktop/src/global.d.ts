@@ -74,6 +74,10 @@ declare global {
       gitRoot?: (path: string) => Promise<string | null>
       // Reveal a path in the OS file manager (Finder / Explorer).
       revealPath?: (path: string) => Promise<boolean>
+      // Rename a file/folder in place (new base name, same parent dir).
+      renamePath?: (path: string, newName: string) => Promise<{ path: string }>
+      // Move a file/folder to the OS trash (recoverable).
+      trashPath?: (path: string) => Promise<boolean>
       // Git-driven worktree management for the "Start work" flow.
       git?: {
         worktreeList: (repoPath: string) => Promise<HermesGitWorktree[]>
@@ -86,6 +90,36 @@ declare global {
           worktreePath: string,
           options?: { force?: boolean }
         ) => Promise<{ removed: string }>
+        branchSwitch: (repoPath: string, branch: string) => Promise<{ branch: string }>
+        // Compact working-tree status for the composer coding rail. Null on a
+        // non-repo / remote backend (where the Electron probe can't run).
+        repoStatus: (repoPath: string) => Promise<HermesRepoStatus | null>
+        // Working-tree-vs-HEAD unified diff for one file (the preview's diff
+        // view). Empty string when the file is unchanged or not in a repo.
+        fileDiff: (repoPath: string, filePath: string) => Promise<string>
+        // Codex-style review pane: changed files per scope, per-file diff, and
+        // stage / unstage / revert.
+        review: {
+          list: (repoPath: string, scope: HermesReviewScope, baseRef?: null | string) => Promise<HermesReviewList>
+          diff: (
+            repoPath: string,
+            filePath: string,
+            scope: HermesReviewScope,
+            baseRef?: null | string,
+            staged?: boolean
+          ) => Promise<string>
+          stage: (repoPath: string, filePath?: null | string) => Promise<{ ok: boolean }>
+          unstage: (repoPath: string, filePath?: null | string) => Promise<{ ok: boolean }>
+          revert: (repoPath: string, filePath?: null | string) => Promise<{ ok: boolean }>
+          revParse: (repoPath: string, ref?: null | string) => Promise<null | string>
+          commit: (repoPath: string, message: string, push: boolean) => Promise<{ ok: boolean }>
+          // Diff (staged-or-all) + recent commit subjects for drafting a
+          // commit message. Reads only; empty strings off-repo.
+          commitContext: (repoPath: string) => Promise<{ diff: string; recent: string }>
+          push: (repoPath: string) => Promise<{ ok: boolean }>
+          shipInfo: (repoPath: string) => Promise<HermesReviewShipInfo>
+          createPr: (repoPath: string) => Promise<{ url: string }>
+        }
         // Repo-first discovery: scan bounded roots for git repos (depth-capped).
         scanRepos: (
           roots: string[],
@@ -514,6 +548,76 @@ export interface HermesGitWorktree {
   isMain: boolean
   detached: boolean
   locked: boolean
+}
+
+// A single changed path from `git status --porcelain=v2`, classified by state
+// so the coding rail / switcher can group + open the right diff.
+export interface HermesRepoStatusFile {
+  path: string
+  staged: boolean
+  unstaged: boolean
+  untracked: boolean
+  conflicted: boolean
+}
+
+// Compact working-tree status for the composer coding rail (parsed from
+// `git status --porcelain=v2 --branch`).
+export interface HermesRepoStatus {
+  branch: null | string
+  // The repo's trunk ("main" / "master" / …), so the UI can offer "branch off
+  // the default" from anywhere. Null when no trunk is detected.
+  defaultBranch: null | string
+  detached: boolean
+  ahead: number
+  behind: number
+  staged: number
+  unstaged: number
+  untracked: number
+  conflicted: number
+  // Total distinct changed paths (tracked modified + conflicts + untracked).
+  changed: number
+  // +/- line counts of tracked changes vs HEAD (staged + unstaged). Untracked
+  // files aren't in the diff, so they don't contribute lines.
+  added: number
+  removed: number
+  // Capped changed-file list (REPO_STATUS_FILE_CAP) for the diff/open actions.
+  files: HermesRepoStatusFile[]
+}
+
+// Diff scope for the review pane, mirroring Codex: uncommitted working-tree
+// changes, all changes vs the branch base, or everything since the current
+// turn began.
+export type HermesReviewScope = 'branch' | 'lastTurn' | 'uncommitted'
+
+// One changed file in the review pane (status letter, +/- lines, staged flag).
+export interface HermesReviewFile {
+  path: string
+  added: number
+  removed: number
+  // M(odified) A(dded) D(eleted) R(enamed) C(opied) U(nmerged) ?(untracked)
+  status: string
+  staged: boolean
+}
+
+export interface HermesReviewList {
+  files: HermesReviewFile[]
+  // The resolved base ref the scope diffed against (branch merge-base / turn
+  // baseline), or null for the uncommitted scope.
+  base: null | string
+}
+
+// The branch's PR (if any) as reported by `gh pr view`.
+export interface HermesReviewPr {
+  url: string
+  state: string
+  number: number
+}
+
+// gh availability/auth + the current branch's PR — drives the review pane's PR
+// button (disabled when gh isn't ready, "Open PR" vs "Create PR" otherwise).
+export interface HermesReviewShipInfo {
+  ghReady: boolean
+  pr: HermesReviewPr | null
 }
 
 export interface HermesReadDirEntry {

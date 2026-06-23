@@ -7,7 +7,7 @@ const os = require('node:os')
 const path = require('node:path')
 const test = require('node:test')
 
-const { ensureGitRepo, parseWorktrees, sanitizeBranch } = require('./git-worktree-ops.cjs')
+const { ensureGitRepo, parseWorktrees, sanitizeBranch, switchBranch } = require('./git-worktree-ops.cjs')
 
 test('sanitizeBranch: spaces → hyphens, forbidden chars dropped, edges trimmed', () => {
   assert.equal(sanitizeBranch('beach vibes'), 'beach-vibes')
@@ -66,6 +66,22 @@ test('ensureGitRepo: inits a plain dir with a root commit so worktrees branch', 
     // Idempotent: an already-committed repo gets no extra commit.
     await ensureGitRepo('git', dir)
     assert.equal(git('rev-list', '--count', 'HEAD'), '1')
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('switchBranch: switches a normal checkout branch', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hermes-switch-'))
+  const git = (...args) => execFileSync('git', args, { cwd: dir }).toString().trim()
+
+  try {
+    await ensureGitRepo('git', dir)
+    execFileSync('git', ['branch', 'feature'], { cwd: dir })
+
+    await switchBranch(dir, 'feature', 'git')
+
+    assert.equal(git('branch', '--show-current'), 'feature')
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }

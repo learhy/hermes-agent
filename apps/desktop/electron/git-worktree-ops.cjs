@@ -217,11 +217,25 @@ async function removeWorktree(repoPath, worktreePath, options, gitBin) {
   return { removed: resolvedTree }
 }
 
+async function switchBranch(repoPath, branch, gitBin) {
+  const resolved = resolveRequestedPathForIpc(repoPath, { purpose: 'Branch switch' })
+  const target = sanitizeBranch(branch)
+
+  if (!target) {
+    throw new Error('Branch name is required.')
+  }
+
+  await runGit(gitBin, ['switch', target], resolved)
+
+  return { branch: target }
+}
+
 module.exports = {
   addWorktree,
   ensureGitRepo,
   listWorktrees,
   parseWorktrees,
   removeWorktree,
-  sanitizeBranch
+  sanitizeBranch,
+  switchBranch
 }
